@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors')
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express();
 const port = 5000;
 
@@ -28,6 +28,29 @@ await client.connect();
 
 const db = client.db('zapShift')
 const zapShiftCollection = db.collection('zapShiftCollection')
+const parcelsCollections = db.collection('parcels')
+
+// parcel apis 
+app.get('/parcels', async (req, res)=>{
+const query = {};
+const {email} = req.query;
+
+if(email) {
+query.senderEmail = email
+}
+
+    const cursor = parcelsCollections.find()
+    const result = await cursor.toArray();
+    res.send(result)
+})
+
+app.post('/parcels', async (req, res)=>{
+    const parcel = req.body;
+    // const query = {_id: new ObjectId(id)}
+    const result = await parcelsCollections.insertOne(parcel)
+    res.send(result)
+})
+
 
 app.get('/zapShift',async (req, res)=>{
 const cursor = zapShiftCollection.find().limit(4);
