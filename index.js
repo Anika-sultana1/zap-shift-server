@@ -78,7 +78,7 @@ async function run() {
         const userCollection = db.collection('users')
         const zapShiftCollection = db.collection('zapShiftCollection')
         const parcelsCollections = db.collection('parcels')
-
+        const riderCollections = db.collection('riders')
         const paymentCollection = db.collection('payments')
 
 // user related apis 
@@ -87,6 +87,13 @@ app.post('/users', async(req, res)=>{
     const user = req.body;
     user.role = 'user';
     user.createdAt=new Date()
+const query = {email:user.email}
+const userExist = await userCollection.findOne(query)
+
+if(userExist){
+    return res.send({message:'user exist'})
+}
+
 
     const result = await userCollection.insertOne(user)
     res.send(result)
@@ -392,6 +399,61 @@ if(payment.paymentStatus === 'paid'){
             const result = await cursor.toArray();
             res.send(result);
         })
+
+
+        app.post('/riders', async(req, res)=>{
+
+const rider = req.body;
+rider.status = 'pending';
+rider.createdAt = new Date();
+const result = await riderCollections.insertOne(rider)
+res.send(result)
+
+        })
+
+        app.get('/riders', async (req, res)=>{
+            // const query = {statusL: 'pending'}
+            const query = { };
+            if(req.query.status){
+                query.status = req.query.status;
+            }
+            const cursor = riderCollections.find(query);
+            const result = await cursor.toArray();
+            res.send(result)
+        })
+
+app.patch('/riders/:id',  async(req, res)=>{
+
+const status = req.body.status;
+const id = req.params.id;
+const query ={_id: new ObjectId(id)}
+const updatedDoc = {
+    $set:{
+        status:status
+    }
+}
+
+const riderResult = await riderCollections.updateOne(query, updatedDoc)
+if(status === 'approved'){
+    const email = req.body.email;
+    const userQuery = {email}
+    const updateUser = {
+        $set:{
+            role:'rider'
+        }
+    }
+    const userResult = await userCollection.updateOne(userQuery, updateUser)
+  return res.send({
+            modifiedCount: userResult.modifiedCount,
+            rider: riderResult
+        });
+}
+
+ return res.send({
+        modifiedCount: riderResult.modifiedCount
+    });
+
+})
 
         // old 
         app.post('/create-checkout-session', async (req, res) => {
