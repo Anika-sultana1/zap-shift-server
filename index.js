@@ -83,6 +83,12 @@ async function run() {
 
 // user related apis 
 
+app.get('/users', verifyFirebaseToken, async (req, res)=>{
+    const cursor = userCollection.find();
+    const result = await cursor.toArray();
+    res.send(result)
+})
+
 app.post('/users', async(req, res)=>{
     const user = req.body;
     user.role = 'user';
@@ -99,7 +105,18 @@ if(userExist){
     res.send(result)
 })
 
-
+app.patch('/users/:id',async (req, res)=>{
+    const id = req.params.id;
+    const roleInfo = req.body;
+    const query ={_id: new ObjectId(id)}
+    const updatedDoc = {
+        $set:{
+            role:roleInfo.role
+        }
+    }
+    const result = await userCollection.updateOne(query, updatedDoc);
+    res.send(result)
+})
 
         // parcel apis 
         app.get('/parcels', async (req, res) => {
@@ -422,6 +439,13 @@ res.send(result)
             res.send(result)
         })
 
+        app.delete('/riders/:id', async (req, res)=>{
+            const id = req.params.id;
+            const query = {_id: new ObjectId(id)}
+            const result = await riderCollections.deleteOne(query)
+            res.send(result)
+        })
+
 app.patch('/riders/:id',  async(req, res)=>{
 
 const status = req.body.status;
@@ -455,6 +479,12 @@ if(status === 'approved'){
 
 })
 
+app.get('/riders/:id', async (req, res)=>{
+    const id = req.params.id;
+    const query = {_id: new ObjectId(id)}
+    const result = await riderCollections.findOne(query)
+    res.send(result)
+})
         // old 
         app.post('/create-checkout-session', async (req, res) => {
             const paymentInfo = req.body;
