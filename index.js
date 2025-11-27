@@ -83,6 +83,19 @@ async function run() {
 
 // user related apis 
 
+
+app.get('/users/:id', async (req, res)=>{
+
+})
+
+app.get('/users/:email/role', async(req, res)=>{
+    const email = req.params.email
+    const query = {email};
+    const userResult = await userCollection.findOne(query)
+    res.send({role: user?.role || 'user'})
+})
+
+
 app.get('/users', verifyFirebaseToken, async (req, res)=>{
     const cursor = userCollection.find();
     const result = await cursor.toArray();
@@ -428,7 +441,7 @@ res.send(result)
 
         })
 
-        app.get('/riders', async (req, res)=>{
+        app.get('/riders', verifyFirebaseToken, async (req, res)=>{
             // const query = {statusL: 'pending'}
             const query = { };
             if(req.query.status){
@@ -450,6 +463,7 @@ app.patch('/riders/:id',  async(req, res)=>{
 
 const status = req.body.status;
 const id = req.params.id;
+console.log("Rider ID:", id, "Email:", req.body.email)
 const query ={_id: new ObjectId(id)}
 const updatedDoc = {
     $set:{
@@ -458,6 +472,12 @@ const updatedDoc = {
 }
 
 const riderResult = await riderCollections.updateOne(query, updatedDoc)
+
+console.log("Rider ID from frontend:", id);
+console.log("New status:", status);
+console.log("Email for user role update:", req.body.email);
+console.log("Rider update result:", riderResult);
+
 if(status === 'approved'){
     const email = req.body.email;
     const userQuery = {email}
