@@ -39,6 +39,22 @@ next();
 
 }
 
+// middle admin before allowing admin activity
+// must be used after verifyFireBaseToken middleware
+const verifyAdmin = async (req, res, next) => {
+
+const email = req.decoded_email
+
+const query ={email}
+const user = await userCollection.findOne(query)
+
+if(!user || user.role !== 'admin'){
+    return res.status(403).send({message:'access forbidden'})
+}
+
+    next();
+}
+
 const crypto = require("crypto");
 
 const generateTrackingId = () => {
@@ -92,12 +108,23 @@ app.get('/users/:email/role', async(req, res)=>{
     const email = req.params.email
     const query = {email};
     const userResult = await userCollection.findOne(query)
-    res.send({role: user?.role || 'user'})
+    res.send({role: userResult?.role || 'user'})
 })
 
 
 app.get('/users', verifyFirebaseToken, async (req, res)=>{
-    const cursor = userCollection.find();
+
+    const searchText = req.query.searchText
+const query = {};
+if(searchText){
+    query.displayName = { $regex: searchText, $options: 'i' };
+
+    // query.$or = [
+    //     {displayName: {$regex:searchText , $option:1}}
+    // ]
+}
+
+    const cursor = userCollection.find(query).sort({createdAt:-1}).limit(5);
     const result = await cursor.toArray();
     res.send(result)
 })
@@ -118,7 +145,7 @@ if(userExist){
     res.send(result)
 })
 
-app.patch('/users/:id',async (req, res)=>{
+app.patch('/users/:id/role',verifyFirebaseToken,verifyAdmin, async (req, res)=>{
     const id = req.params.id;
     const roleInfo = req.body;
     const query ={_id: new ObjectId(id)}
@@ -459,7 +486,7 @@ res.send(result)
             res.send(result)
         })
 
-app.patch('/riders/:id',  async(req, res)=>{
+app.patch('/riders/:id',verifyFirebaseToken,verifyAdmin, async(req, res)=>{
 
 const status = req.body.status;
 const id = req.params.id;
