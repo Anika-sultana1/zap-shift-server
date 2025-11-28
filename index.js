@@ -21,6 +21,8 @@ const port = 5000;
 const verifyFirebaseToken = async (req, res, next)=>{
 
     const authorization = req.headers.authorization;
+    console.log('authorization holo',authorization)
+    console.log('authorization holo',req.headers.authorization)
     if(!authorization){
 return res.status(401).send({message: 'unauthorized access'})
     }
@@ -39,6 +41,7 @@ next();
 
 }
 
+let userCollection;
 // middle admin before allowing admin activity
 // must be used after verifyFireBaseToken middleware
 const verifyAdmin = async (req, res, next) => {
@@ -91,7 +94,7 @@ async function run() {
         await client.connect();
 
         const db = client.db('zapShift')
-        const userCollection = db.collection('users')
+         userCollection = db.collection('users')
         const zapShiftCollection = db.collection('zapShiftCollection')
         const parcelsCollections = db.collection('parcels')
         const riderCollections = db.collection('riders')
@@ -112,12 +115,15 @@ app.get('/users/:email/role', async(req, res)=>{
 })
 
 
+
 app.get('/users', verifyFirebaseToken, async (req, res)=>{
 
-    const searchText = req.query.searchText
+    console.log('req er query er holo', req.query)
+    const search = req.query.searchText 
+    console.log('searchText', search)
 const query = {};
-if(searchText){
-    query.displayName = { $regex: searchText, $options: 'i' };
+if(search){
+    query.displayName = { $regex: search, $options: 'i' };
 
     // query.$or = [
     //     {displayName: {$regex:searchText , $option:1}}
@@ -161,12 +167,14 @@ app.patch('/users/:id/role',verifyFirebaseToken,verifyAdmin, async (req, res)=>{
         // parcel apis 
         app.get('/parcels', async (req, res) => {
             const query = {};
-            const { email } = req.query;
+            const { email , deliveryStatus} = req.query;
 
             if (email) {
                 query.senderEmail = email
             }
-
+             if(deliveryStatus){
+                query.deliveryStatus = deliveryStatus;
+             }
             const options = { sort: { createdAt: -1 } }
 
             const cursor = parcelsCollections.find(query, options)
@@ -181,6 +189,33 @@ app.patch('/users/:id/role',verifyFirebaseToken,verifyAdmin, async (req, res)=>{
             res.send(result)
         })
 
+        app.patch('/parcels/:id', async(req, res)=>{
+            const { riderName, riderEmail, riderId,} = req.body;
+       const id = req.params.id;
+       const query = {_id: new ObjectId(id)}
+const updatedDoc = {
+    $set:{
+deliveryStatus: 'driver_assigned',
+riderId:riderId,
+riderName:riderName,
+riderEmail:riderEmail,
+    }
+
+}       
+const result = await parcelsCollections.updateOne(query, updatedDoc)
+// update rider information 
+const riderQuery = {_id: new ObjectId(riderId)}
+const riderUpdatedDoc = {
+    $set:{
+        workStatus: 'in_delivery',
+    }
+}
+const riderResult = await riderCollections.updateOne(riderQuery, riderUpdatedDoc)
+res.send(riderResult)
+
+
+
+        })
 
         app.get('/zapShift', async (req, res) => {
             const cursor = zapShiftCollection.find().limit(4);
@@ -401,6 +436,7 @@ if(paymentExist){
             const update = {
                 $set: {
                     paymentStatus: 'paid',
+                    deliveryStatus: 'pending-pickup',
                     trackingId: trackingId 
                   
                 }
@@ -468,11 +504,18 @@ res.send(result)
 
         })
 
-        app.get('/riders', verifyFirebaseToken, async (req, res)=>{
-            // const query = {statusL: 'pending'}
+        app.get('/riders', /*verifyFirebaseToken,**/ async (req, res)=>{
+             //const query = {statusL: 'pending'}
+            const {status,district, workStatus} = req.query
             const query = { };
-            if(req.query.status){
-                query.status = req.query.status;
+            if(status){
+                query.status =status;
+            }
+            if(district){
+                query.district = district
+            }
+            if(workStatus){
+                query.workStatus = workStatus;
             }
             const cursor = riderCollections.find(query);
             const result = await cursor.toArray();
@@ -490,16 +533,17 @@ app.patch('/riders/:id',verifyFirebaseToken,verifyAdmin, async(req, res)=>{
 
 const status = req.body.status;
 const id = req.params.id;
-console.log("Rider ID:", id, "Email:", req.body.email)
+console.log("Rider ID:", id, "Email:", req.body.email, status)
 const query ={_id: new ObjectId(id)}
 const updatedDoc = {
     $set:{
-        status:status
+        status:status,
+        workStatus:'available'
     }
 }
 
 const riderResult = await riderCollections.updateOne(query, updatedDoc)
-
+console.log('riderstatus', riderResult)
 console.log("Rider ID from frontend:", id);
 console.log("New status:", status);
 console.log("Email for user role update:", req.body.email);
@@ -507,6 +551,7 @@ console.log("Rider update result:", riderResult);
 
 if(status === 'approved'){
     const email = req.body.email;
+    console.log('email', email)
     const userQuery = {email}
     const updateUser = {
         $set:{
@@ -514,7 +559,8 @@ if(status === 'approved'){
         }
     }
     const userResult = await userCollection.updateOne(userQuery, updateUser)
-  return res.send({
+ console.log('userResult', userResult)
+    return res.send({
             modifiedCount: userResult.modifiedCount,
             rider: riderResult
         });
