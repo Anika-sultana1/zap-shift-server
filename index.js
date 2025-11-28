@@ -528,49 +528,40 @@ res.send(result)
             const result = await riderCollections.deleteOne(query)
             res.send(result)
         })
+app.patch('/riders/:id', async (req, res) => {
+  const id = req.params.id;
+  const { status, email } = req.body;
 
-app.patch('/riders/:id',verifyFirebaseToken,verifyAdmin, async(req, res)=>{
+  const query = { _id: new ObjectId(id) };
 
-const status = req.body.status;
-const id = req.params.id;
-console.log("Rider ID:", id, "Email:", req.body.email, status)
-const query ={_id: new ObjectId(id)}
-const updatedDoc = {
-    $set:{
-        status:status,
-        workStatus:'available'
-    }
-}
+  // update rider table status
+  const update = { $set: { status } };
+  const riderResult = await riderCollections.updateOne(query, update);
 
-const riderResult = await riderCollections.updateOne(query, updatedDoc)
-console.log('riderstatus', riderResult)
-console.log("Rider ID from frontend:", id);
-console.log("New status:", status);
-console.log("Email for user role update:", req.body.email);
-console.log("Rider update result:", riderResult);
+  // check the user first
+  const user = await userCollection.findOne({ email });
 
-if(status === 'approved'){
-    const email = req.body.email;
-    console.log('email', email)
-    const userQuery = {email}
-    const updateUser = {
-        $set:{
-            role:'rider'
-        }
-    }
-    const userResult = await userCollection.updateOne(userQuery, updateUser)
- console.log('userResult', userResult)
+  // if user is admin → skip role update
+  if (user?.role === "admin") {
     return res.send({
-            modifiedCount: userResult.modifiedCount,
-            rider: riderResult
-        });
-}
-
- return res.send({
-        modifiedCount: riderResult.modifiedCount
+      modifiedCount: riderResult.modifiedCount,
+      userRoleUpdated: 0,
+      message: "Admin role not changed"
     });
+  }
 
-})
+  // update user role only if not admin
+  const userResult = await userCollection.updateOne(
+    { email },
+    { $set: { role: status === "approved" ? "rider" : "user" } }
+  );
+
+  res.send({
+    modifiedCount: riderResult.modifiedCount,
+    userRoleUpdated: userResult.modifiedCount
+  });
+});
+
 
 app.get('/riders/:id', async (req, res)=>{
     const id = req.params.id;
