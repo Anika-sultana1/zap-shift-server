@@ -58,6 +58,8 @@ if(!user || user.role !== 'admin'){
     next();
 }
 
+
+
 const crypto = require("crypto");
 
 const generateTrackingId = () => {
@@ -98,6 +100,7 @@ async function run() {
         const zapShiftCollection = db.collection('zapShiftCollection')
         const parcelsCollections = db.collection('parcels')
         const riderCollections = db.collection('riders')
+        const trackingsCollections = db.collection('trackings')
         const paymentCollection = db.collection('payments')
 
 // user related apis 
@@ -106,6 +109,19 @@ async function run() {
 app.get('/users/:id', async (req, res)=>{
 
 })
+
+const logTracking = (trackingId, status)=>{
+
+const log = {
+    trackingId ,
+    status, details:status.split('-').join(' '),
+    createdAt: new Date();
+
+}
+const result = await trackingId.insertOne(log)
+return result;
+}
+
 
 app.get('/users/:email/role', async(req, res)=>{
     const email = req.params.email
@@ -182,6 +198,28 @@ app.patch('/users/:id/role',verifyFirebaseToken,verifyAdmin, async (req, res)=>{
             res.send(result)
         })
 
+        app.get('/parcels/rider', async (req, res)=>{
+            const {riderEmail, deliveryStatus} = req.query;
+            const query = {}
+            if(riderEmail){
+                query.riderEmail = riderEmail;
+            }
+
+            if(deliveryStatus !== 'parcel_delivered'){
+                // query.deliveryStatus = {$in:['driver-assigned','rider_arriving']}
+                query.deliveryStatus = {$nin:['parcel_delivered']}
+            
+            }
+            else{
+                query.deliveryStatus=deliveryStatus;
+            }
+const cursor = parcelsCollections.find(query)
+const result = await cursor.toArray();
+res.send(result)
+
+        })
+
+
         app.post('/parcels', async (req, res) => {
             const parcel = req.body;
             parcel.createdAt = new Date();
@@ -189,8 +227,9 @@ app.patch('/users/:id/role',verifyFirebaseToken,verifyAdmin, async (req, res)=>{
             res.send(result)
         })
 
+        // ToDo : rename this to be specific like /parcels/:id/assign
         app.patch('/parcels/:id', async(req, res)=>{
-            const { riderName, riderEmail, riderId,} = req.body;
+            const { riderName, riderEmail, riderId,trackingId} = req.body;
        const id = req.params.id;
        const query = {_id: new ObjectId(id)}
 const updatedDoc = {
@@ -211,10 +250,41 @@ const riderUpdatedDoc = {
     }
 }
 const riderResult = await riderCollections.updateOne(riderQuery, riderUpdatedDoc)
+
+logTracking(trackingId, 'driver_assigned')
+
 res.send(riderResult)
 
 
 
+        })
+
+
+        app.patch('/parcels/:id/status', async(req, res)=>{
+            const {deliveryStatus, riderId, trackingId} = req.body;
+            const id = req.params.id
+            const query = {_id: new ObjectId(id)}
+            const updatedDoc = {
+                $set:{
+                    deliveryStatus:deliveryStatus
+                }
+            }
+
+            if(deliveryStatus === 'parcel_delivered'){
+const riderQuery = {_id:new ObjectId(riderId)}
+const riderUpdatedDoc = {
+    $set:{
+        workStatus:'available'
+    }
+}
+const riderResult = await riderCollections.updateOne(riderQuery, riderUpdatedDoc)
+            }
+const result = await parcelsCollections.updateOne(query, updatedDoc)
+
+// log tracking 
+logTracking(trackingId, deliveryStatus)
+
+res.send(result)
         })
 
         app.get('/zapShift', async (req, res) => {
@@ -463,6 +533,10 @@ trackingId:trackingId,
 if(payment.paymentStatus === 'paid'){
 
     const resultPayment = await paymentCollection.insertOne(payment)
+    
+    
+    logTracking(trackingId,'pending-pickup')
+    
     res.send({success: true,
          modifyParcel: result, 
          trackingId:trackingId ,
@@ -494,15 +568,19 @@ if(payment.paymentStatus === 'paid'){
         })
 
 
-        app.post('/riders', async(req, res)=>{
+       app.post('/riders', async(req, res)=>{
+  try {
+    const rider = req.body;
+    rider.status = 'pending';
+    rider.createdAt = new Date();
+    const result = await riderCollections.insertOne(rider)
+    res.send(result)
+  } catch(err) {
+    console.log('Rider insertion error:', err);
+    res.status(500).send({ error: err.message })
+  }
+})
 
-const rider = req.body;
-rider.status = 'pending';
-rider.createdAt = new Date();
-const result = await riderCollections.insertOne(rider)
-res.send(result)
-
-        })
 
         app.get('/riders', /*verifyFirebaseToken,**/ async (req, res)=>{
              //const query = {statusL: 'pending'}
@@ -534,23 +612,27 @@ app.patch('/riders/:id', async (req, res) => {
 
   const query = { _id: new ObjectId(id) };
 
-  // update rider table status
-  const update = { $set: { status } };
+  // APPROVAL LOGIC: Add workStatus update
+  const update = {
+    $set: {
+      status,
+      workStatus:  "available"
+    }
+  };
+
   const riderResult = await riderCollections.updateOne(query, update);
 
   // check the user first
   const user = await userCollection.findOne({ email });
 
-  // if user is admin → skip role update
+  // admin skip
   if (user?.role === "admin") {
     return res.send({
       modifiedCount: riderResult.modifiedCount,
-      userRoleUpdated: 0,
       message: "Admin role not changed"
     });
   }
 
-  // update user role only if not admin
   const userResult = await userCollection.updateOne(
     { email },
     { $set: { role: status === "approved" ? "rider" : "user" } }
@@ -561,6 +643,7 @@ app.patch('/riders/:id', async (req, res) => {
     userRoleUpdated: userResult.modifiedCount
   });
 });
+
 
 
 app.get('/riders/:id', async (req, res)=>{
