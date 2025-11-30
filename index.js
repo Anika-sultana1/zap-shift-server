@@ -57,6 +57,19 @@ if(!user || user.role !== 'admin'){
 
     next();
 }
+const verifyRider = async (req, res, next) => {
+
+const email = req.decoded_email
+
+const query ={email}
+const user = await userCollection.findOne(query)
+
+if(!user || user.role !== 'rider'){
+    return res.status(403).send({message:'access forbidden'})
+}
+
+    next();
+}
 
 
 
@@ -110,18 +123,30 @@ app.get('/users/:id', async (req, res)=>{
 
 })
 
-const logTracking = (trackingId, status)=>{
+const logTracking =async (trackingId, status)=>{
 
 const log = {
     trackingId ,
-    status, details:status.split('-').join(' '),
-    createdAt: new Date();
+    status, details:status.split('_').join(' '),
+    createdAt: new Date()
 
 }
-const result = await trackingId.insertOne(log)
+const result = await trackingsCollections.insertOne(log)
 return result;
 }
 
+// tracking related apis 
+
+app.get('/trackings/:trackingId/logs', async (req, res)=>{
+
+const trackingId = req.params.trackingId;
+const query = {trackingId}
+const cursor = trackingsCollections.find(query)
+const result = await cursor.toArray();
+res.send(result)
+
+
+})
 
 app.get('/users/:email/role', async(req, res)=>{
     const email = req.params.email
@@ -222,7 +247,13 @@ res.send(result)
 
         app.post('/parcels', async (req, res) => {
             const parcel = req.body;
+            const trackingId = generateTrackingId();
             parcel.createdAt = new Date();
+            parcel.trackingId = trackingId;
+
+
+            logTracking(trackingId, 'parcel_created')
+
             const result = await parcelsCollections.insertOne(parcel)
             res.send(result)
         })
@@ -324,7 +355,7 @@ res.send(result)
                         },
                     ],
                     mode: 'payment',
-                    metadata: { parcelId: paymentInfo.parcelId, parcelName:paymentInfo.parcelName },
+                    metadata: { parcelId: paymentInfo.parcelId, parcelName:paymentInfo.parcelName , trackingId:paymentInfo.trackingId},
                     customer_email: paymentInfo.senderEmail,
                     success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                     cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
@@ -484,11 +515,14 @@ res.send(result)
 
         app.patch('/payment-success', async (req, res) => {
             const sessionId = req.query.session_id;
-            console.log('sessionId ', sessionId)
-            const trackingId = generateTrackingId();
-            const session = await stripe.checkout.sessions.retrieve(sessionId);
-            console.log('session retrieve', session)
+            // console.log('sessionId ', sessionId)
+
+                 const session = await stripe.checkout.sessions.retrieve(sessionId);
+            // console.log('session retrieve', session)
            
+            // use the previues id created during the parcel create which was  set to the session metadata during session creation
+            const trackingId = session.metadata.trackingId
+       
             const transactionId = session.payment_intent
             const query = {transactionId:transactionId}
             const paymentExist = await paymentCollection.findOne(query)
@@ -506,9 +540,8 @@ if(paymentExist){
             const update = {
                 $set: {
                     paymentStatus: 'paid',
-                    deliveryStatus: 'pending-pickup',
-                    trackingId: trackingId 
-                  
+                    deliveryStatus: 'parcel_paid',
+                   
                 }
             }
 
@@ -653,36 +686,36 @@ app.get('/riders/:id', async (req, res)=>{
     res.send(result)
 })
         // old 
-        app.post('/create-checkout-session', async (req, res) => {
-            const paymentInfo = req.body;
-            const amount = parseInt(paymentInfo.cost) * 100
-            const session = await stripe.checkout.sessions.create({
-                line_items: [
-                    {
-                        // Provide the exact Price ID (for example, price_1234) of the product you want to sell
-                        price_data: {
-                            currency: 'USD',
-                            unit_amount: amount,
-                            product_data: {
-                                name: paymentInfo.parcelName,
+        // app.post('/create-checkout-session', async (req, res) => {
+        //     const paymentInfo = req.body;
+        //     const amount = parseInt(paymentInfo.cost) * 100
+        //     const session = await stripe.checkout.sessions.create({
+        //         line_items: [
+        //             {
+        //                 // Provide the exact Price ID (for example, price_1234) of the product you want to sell
+        //                 price_data: {
+        //                     currency: 'USD',
+        //                     unit_amount: amount,
+        //                     product_data: {
+        //                         name: paymentInfo.parcelName,
 
-                            }
+        //                     }
 
-                        },
+        //                 },
 
-                        quantity: 1,
-                    },
-                ],
-                customer_email: paymentInfo.senderEmail,
-                mode: 'payment',
-                metadata: { parcelId: paymentInfo.parcelId },
-                success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
-                cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
-            });
+        //                 quantity: 1,
+        //             },
+        //         ],
+        //         customer_email: paymentInfo.senderEmail,
+        //         mode: 'payment',
+        //         metadata: { parcelId: paymentInfo.parcelId },
+        //         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+        //         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+        //     });
 
-            console.log(session)
-            res.send({ url: session.url })
-        })
+        //     console.log(session)
+        //     res.send({ url: session.url })
+        // })
 
 
 
